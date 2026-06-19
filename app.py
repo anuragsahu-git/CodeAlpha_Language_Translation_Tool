@@ -13,7 +13,7 @@ import base64
 # ==========================================
 st.set_page_config(
     page_title="Global Translation | Real-Time. Real Dialogue. Seamless Global Conversations.",
-    page_icon="🌐",
+    page_icon="favicon.ico",
     layout="wide",
     initial_sidebar_state="expanded"
 )
