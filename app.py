@@ -1,462 +1,591 @@
 import streamlit as st
+import time
+import uuid
+import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 import streamlit.components.v1 as components
-from deep_translator import GoogleTranslator
-import edge_tts
-import asyncio
-import tempfile
-import os
-import re
-import base64
 
 # ==========================================
-# PAGE CONFIG
+# 1. PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="Global Translation | Real-Time. Real Dialogue. Seamless Global Conversations.",
+    page_title="CodeAlpha | FAQ Assistant",
     page_icon="favicon.ico",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==========================================
-# PROFESSIONAL UI/UX CSS & TYPOGRAPHY
+# 2. CORE NLP ENGINE & DATABASE (100% COMPLETE)
 # ==========================================
-st.markdown(
-    """
-    <style>
-        /* Increase global typography and remove default heavy margins */
-        .block-container { padding-top: 2rem !important; }
-        
-        /* Make all paragraph text larger and more readable */
-        .stMarkdown p { font-size: 1.1rem !important; color: #3c4043; }
-        
-        /* Style the input/output container cards */
-        div[data-testid="stColumn"] {
-            background-color: #ffffff;
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid #dadce0;
-            box-shadow: 5px 1px 3px rgba(0, 0, 0, 0.05);
-        }
+FAQ_DATABASE = [
+    # --- GREETINGS & PLEASANTRIES ---
+    {"question": "Hi", "answer": "Hello! I am the CodeAlpha AI Assistant. How can I help you with your internship today?", "tags": "hi hi! hello hello! hey greetings hi there hello there whats up"},
+    {"question": "Good Morning", "answer": "Good morning! I am the CodeAlpha AI Assistant. How can I assist you today?", "tags": "good morning morning greetings"},
+    {"question": "Good Afternoon", "answer": "Good afternoon! I hope your day is going well. How can I help you with your CodeAlpha tasks?", "tags": "good afternoon noon greetings"},
+    {"question": "Good Evening", "answer": "Good evening! How can I assist you with your CodeAlpha internship today?", "tags": "good evening evening greetings"},
+    {"question": "Good Night", "answer": "Good night! Make sure to get some rest. I'll be here when you need help tomorrow.", "tags": "good night sleep sweet dreams"},
+    {"question": "Nice to meet you", "answer": "Nice to meet you too! I'm here to help you navigate your CodeAlpha journey. What would you like to know?", "tags": "nice to meet you glad to meet you how are you doing pleased to meet you"},
+    {"question": "Thank you", "answer": "You're very welcome! If you have any more questions about the CodeAlpha internship, feel free to ask.", "tags": "thank you thanks appreciate it grateful thanks a lot much appreciated"},
+    {"question": "Bye", "answer": "Goodbye! Feel free to return if you have more questions. Best of luck with your CodeAlpha tasks!", "tags": "bye goodbye see you later take care exit farewell"},
 
-        /* Enlarge Text Area Fonts for Readability */
-        .stTextArea textarea {
-            font-size: 1.25rem !important;
-            line-height: 1.6 !important;
-            border: 1px solid #dadce0 !important;
-            border-radius: 8px !important;
-            padding: 12px !important;
-            background-color: #f8f9fa !important;
-        }
-        .stTextArea textarea:focus {
-            border-color: #1a73e8 !important;
-            background-color: #ffffff !important;
-            box-shadow: inset 0 0 0 1px #1a73e8 !important;
-        }
+    # --- CORE COMPANY & ASSISTANT IDENTITY ---
+    {"question": "What is your name?", "answer": "I am the CodeAlpha AI Assistant, designed to help you with your internship and platform queries.", "tags": "name who are you identity your name called bot chatbot"},
+    {"question": "What is CodeAlpha?", "answer": "CodeAlpha is a leading software development company dedicated to driving innovation and excellence across emerging technologies.", "tags": "codealpha about what it does company overview software development"},
+    {"question": "Who is the owner of CodeAlpha?", "answer": "Mr. Abhay Agnihotri (also known as Abhay Kumar) is the founder and owner of CodeAlpha, an Edtech platform providing virtual internships and global hands-on software development experiences to students.", "tags": "owner founder who owns codealpha creator abhay agnihotri abhay kumar"},
+    {"question": "What can you do or who are you?", "answer": "I am the CodeAlpha AI Assistant. I can help you understand the internship overview, guide you through task submissions (Tasks 1 to 4), check verified certificates, and provide instant support for platform queries.", "tags": "what can you do help features list capability skills bot tools"},
+    {"question": "What is the official CodeAlpha website?", "answer": "The official CodeAlpha website is www.codealpha.tech.", "tags": "website web link site url official"},
+    {"question": "How do I contact support?", "answer": "You can reach CodeAlpha on WhatsApp at +91 9336576683 or email services@codealpha.tech.", "tags": "whatsapp phone number email address contact support help reach message"},
 
-        /* Enlarge Dropdown Menus */
-        .stSelectbox div[data-baseweb="select"] {
-            font-size: 1.1rem !important;
-        }
-        .stSelectbox label {
-            font-size: 1.05rem !important;
-            font-weight: 500 !important;
-            color: #5f6368 !important;
-        }
+    # --- INTERNSHIP & TASKS ---
+    {"question": "What happens if my code has bugs or fails the evaluation?", "answer": "Don't worry! Internships are for learning. If your task has minor issues or bugs, our mentors will provide structural feedback, and you can re-submit the clean version before the final evaluation timeline.", "tags": "bugs fail evaluation error wrong code reject mistake rewrite resubmit correction"},
+    {"question": "Can I change my chosen task track after starting?", "answer": "Yes, you are completely free to switch or choose any of the listed tasks (Tasks 1 to 4) depending on your evolving tech interest. Just make sure to submit the minimum required count.", "tags": "change track switch task dynamic choose move domain python java ml"},
+    {"question": "What if I miss the deadline due to university exams or medical emergencies?", "answer": "We understand that academic schedules and emergencies happen. You can request a deadline extension by writing a formal mail to services@codealpha.tech along with valid proof.", "tags": "miss deadline exam college university medical emergency sick extend extension delay left"},
+    {"question": "Is prior experience or a high CGPA required to pass the internship?", "answer": "No. CodeAlpha values self-driven learning and practical execution over grades. As long as you complete your tasks honestly and follow the presentation guidelines, you will pass smoothly.", "tags": "gpa cgpa marks criteria eligibility basic fresher beginner struggle pass criteria threshold"},
+    {"question": "How can I display this internship on my resume or LinkedIn to impress recruiters?", "answer": "You can list your role as 'Artificial Intelligence Intern at CodeAlpha'. Highlight your hands-on projects (like Object Detection or Machine Translation Tool), link your GitHub repository, and attach your QR-verified certificate.", "tags": "resume CV profile linkedin share recruiter job hire showcase display portfolio build highlight"},
+    {"question": "Does CodeAlpha provide full-time job offers (PPO) based on performance?", "answer": "Yes! Exceptional interns who showcase stellar coding ethics, clean project documentation, and proactive community engagement are fast-tracked into our talent pool for future placement opportunities and full-time job offers (PPO).", "tags": "job full time ppo placement offer career package salary corporate selection hire bonus"},
+    {"question": "What criteria are used to write the Letter of Recommendation (LOR)?", "answer": "The Letter of Recommendation (LOR) is awarded to top-performing interns who complete all 4 tasks with outstanding code quality, modular documentation, and excellent video explanations on LinkedIn.", "tags": "lor letter of recommendation quality special merit elite list selection benchmark top intern bonus"},
+    {"question": "Do I have to use standard libraries or can I implement custom deep learning frameworks?", "answer": "You are free to innovate! While Task 2 mentions basic matching models, you can scale it up using PyTorch, TensorFlow, Hugging Face Transformers, or custom state-of-the-art NLP pipelines as long as the core system remains functional.", "tags": "pytorch tensorflow deep learning advanced models custom transformer code framework library scale backend"},
+    {"question": "My dataset for Task 3 or 4 is too large to push to GitHub. What should I do?", "answer": "Never upload large data binaries or raw dataset folders directly to GitHub. Add your dataset folder to your `.gitignore` file, and instead provide a download script or a clear cloud storage link (Google Drive/Kaggle) in your `README.md` file.", "tags": "large dataset gitignore file data push block error binary size limit heavy files drive link"},
+    {"question": "Can I host or deploy my app on Streamlit Cloud or Hugging Face Spaces for submission?", "answer": "Absolutely! Deploying your tool on live web platforms like Streamlit Community Cloud, Vercel, or Hugging Face Spaces is highly encouraged and adds significant value to your final evaluation score.", "tags": "host deploy cloud live link web server publish deployment huggingface vercel online production access"},
+    {"question": "Can I submit a project made by my classmate if we worked together as a team?", "answer": "No. All CodeAlpha internship tracks are strictly individual. While conceptual discussions are encouraged, sharing, copying, or duplicating source code directly will result in immediate disqualification for plagiarism.", "tags": "copy duplicate friend team classmate group work cheat generic identical matching plagiarism copycat"},
+    {"question": "Is there any penalty if I complete only one task instead of the required minimum?", "answer": "Yes. To remain eligible for the final internship completion certificate, you must successfully deploy and submit a minimum of two or three tasks out of the four listed in the handbook.", "tags": "penalty submit one task fail shortcut minimum limit criteria safe skip dropout lazy boundary"},
+    {"question": "Can I get my completion certificate early if I finish all tasks within 3 days?", "answer": "Certificates are processed systematically at the end of the official batch tenure to maintain verification synchronization. Early generation requests are not entertained to ensure strict evaluation equity.", "tags": "early fast speed certificate quickly urgent process processing batch end finish complete days wrap"},
 
-        /* Professional Primary Button */
-        button[kind="primary"] {
-            background-color: #1a73e8 !important;
-            color: white !important;
-            font-size: 1.1rem !important;
-            font-weight: 600 !important;
-            border-radius: 6px !important;
-            padding: 0.6rem 0 !important;
-            border: none !important;
-            width: 100% !important;
-        }
-        
-        button[kind="primary"]:hover { 
-            background-color: #1557b0 !important; 
-        }
+    # --- TASK DETAILS ---
+    {"question": "What is the AI internship overview?", "answer": "The internship provides hands-on experience in AI model development, machine learning workflows, and real-time data processing.", "tags": "overview learn do hands on machine learning artificial intelligence"},
+    {"question": "What is Task 1?", "answer": "Task 1 is the Language Translation Tool. You must create a UI to enter text, select source and target languages, and display the translated response.", "tags": "task 1 language translation tool ui api google microsoft"},
+    {"question": "What is Task 2?", "answer": "Task 2 is building a Chatbot for FAQs. You need to collect FAQs, preprocess the text, match intents, and display chatbot responses.", "tags": "task 2 chatbot faq nlp nltk spacy cosine similarity intent"},
+    {"question": "What is Task 3?", "answer": "Task 3 is Music Generation with AI. You will collect MIDI data, preprocess it, and train a model to generate new music sequences.", "tags": "task 3 music generation ai midi rnn lstm gan"},
+    {"question": "What is Task 4?", "answer": "Task 4 is Object Detection and Tracking. You must set up real-time video input, detect objects, and apply object tracking.", "tags": "task 4 object detection tracking opencv yolo bounding box"},
+    
+    # --- LOGISTICS & REQS ---
+    {"question": "What are the perks of the internship?", "answer": "Perks include an Internship Offer Letter, Completion Certificate, Letter of Recommendation, Job Opportunities/Placement Support, and Resume Building Support.", "tags": "perks benefits get gain offer letter placement support"},
+    {"question": "Is the completion certificate verified?", "answer": "Yes, the Completion Certificate includes a Unique ID and is QR Verified.", "tags": "certificate verified qr code unique id proof"},
+    {"question": "What are the social media requirements?", "answer": "You must share your internship status on LinkedIn and tag @CodeAlpha.", "tags": "social media linkedin post tag share status"},
+    {"question": "What are the GitHub repository requirements?", "answer": "You are required to upload your complete source code to GitHub in a repository named 'CodeAlpha_ProjectName'.", "tags": "github repo repository source code upload push name"},
+    {"question": "Do I need to make a video for my submission?", "answer": "Yes, you must post a video explanation of your project on LinkedIn along with your GitHub repository link.", "tags": "video record explanation presentation post"},
+    {"question": "Where do I submit my completed tasks?", "answer": "You must submit your completed tasks using the Submission Form that will be shared in your respective WhatsApp group.", "tags": "submit form link where how whatsapp"},
+    {"question": "How many tasks must I complete to get a certificate?", "answer": "To be eligible for the internship certificate, you must complete a minimum of two or three tasks out of the four listed.", "tags": "tasks minimum complete pass requirement"},
 
-        button[kind="primary"]:focus {
-            outline: none !important;
-            box-shadow: 0 0 0 3px rgba(26,115,232,0.3) !important;
-        }
+    # --- SYSTEMIC ---
+    {"question": "Is my conversation data stored or shared with third parties?", "answer": "Your conversation privacy is our priority. Your chat history is processed to provide you with immediate assistance and is not shared with any external third parties for marketing purposes.", "tags": "privacy data security third party policy private save store"},
+    {"question": "How do I know if the internship portal is currently down?", "answer": "You can check the system status directly on our official website dashboard at www.codealpha.tech/status. If you face a blank screen, try clearing your browser cache.", "tags": "down status portal error server maintenance offline crash"},
+    {"question": "Where can I report a wrong answer provided by this assistant?", "answer": "We are constantly training! Please report any incorrect responses by sending a screenshot to services@codealpha.tech with the subject 'Feedback: Chatbot'.", "tags": "report feedback wrong incorrect error fix improve report support"},
+    {"question": "Can you solve my university exam questions or write my entire report from scratch?", "answer": "I am an assistant to guide you, structure your thoughts, and help with technical debugging. I cannot complete your academic assignments or reports entirely, as that would violate our 'Self-Driven Learning' policy.", "tags": "write assignment report exam university solve cheating academic honesty policy"},
+    {"question": "How do I get a Letter of Recommendation?", "answer": "A Letter of Recommendation is provided based on your performance during the internship.", "tags": "lor letter of recommendation reference performance"} 
+]
 
-        /* Professional Secondary Buttons */
-        button[kind="secondary"] p { font-size: 1.05rem !important; }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+corpus = [f"{item['question']} {item['tags']}" for item in FAQ_DATABASE]
+answers = [item['answer'] for item in FAQ_DATABASE]
 
-# ==========================================
-# HELPERS
-# ==========================================
-def run_async(coro):
-    try:
-        asyncio.get_running_loop()
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-    except RuntimeError:
-        return asyncio.run(coro)
+def build_nlp_model():
+    vectorizer = TfidfVectorizer(
+        stop_words='english',
+        ngram_range=(1, 2)
+    )
+    faq_vectors = vectorizer.fit_transform(corpus)
+    return vectorizer, faq_vectors
 
-def get_languages():
-    try:
-        global_languages = GoogleTranslator().get_supported_languages(as_dict=True)
-        return {k.title(): v for k, v in global_languages.items()}
-    except Exception:
-        return {
-            "English": "en", "Hindi": "hi", "Spanish": "es", 
-            "French": "fr", "German": "de"
-        }
+vectorizer, faq_vectors = build_nlp_model()
 
-def translate_large_text_safely(text_data, src_code, tgt_code):
-    text_data = text_data.strip()
-    if not text_data: return ""
 
-    raw_sentences = re.split(r'(?<=[.!?।])\s+', text_data)
-    text_chunks, current_chunk = [], ""
+def get_best_match(user_query, threshold=0.15):
 
-    for sentence in raw_sentences:
-        sentence = sentence.strip()
-        if not sentence: continue
-        if len(current_chunk) + len(sentence) + 1 <= 1500:
-            current_chunk += sentence + " "
+    import re
+
+    query = user_query.lower().strip()
+
+    # Handle Task Questions
+    task_match = re.search(r"task\s*(\d+)", query)
+
+    if task_match:
+        task_num = int(task_match.group(1))
+
+        if task_num == 1:
+            return "Task 1 is the Language Translation Tool. You must create a UI to enter text, select source and target languages, and display the translated response."
+
+        elif task_num == 2:
+            return "Task 2 is building a Chatbot for FAQs. You need to collect FAQs, preprocess the text, match intents, and display chatbot responses."
+
+        elif task_num == 3:
+            return "Task 3 is Music Generation with AI. You will collect MIDI data, preprocess it, and train a model to generate new music sequences."
+
+        elif task_num == 4:
+            return "Task 4 is Object Detection and Tracking. You must set up real-time video input, detect objects, and apply object tracking."
+
         else:
-            if current_chunk.strip():
-                text_chunks.append(current_chunk.strip())
-            current_chunk = sentence + " "
+            return "Only Task 1, Task 2, Task 3, and Task 4 are available in the CodeAlpha AI Internship."
 
-    if current_chunk.strip():
-        text_chunks.append(current_chunk.strip())
+    # TF-IDF Matching
+    query_vector = vectorizer.transform([query])
+    similarities = cosine_similarity(query_vector, faq_vectors).flatten()
 
-    translator = GoogleTranslator(source=src_code, target=tgt_code)
-    final_translated_text = []
+    best_match_index = np.argmax(similarities)
 
-    for chunk in text_chunks:
-        try:
-            translated_part = translator.translate(chunk)
-            final_translated_text.append(translated_part if translated_part else chunk)
-        except Exception:
-            final_translated_text.append(chunk)
+    if similarities[best_match_index] < threshold:
+        return "I apologize, but I couldn't understand your question. Could you please rephrase it? I'll be happy to help you."
 
-    return " ".join(final_translated_text).strip()
-
-def generate_voice_internal(text_data, target_lang_name):
-    lang_lower = target_lang_name.lower()
-    voice_profile = "en-IN-NeerjaNeural"
-    if "hindi" in lang_lower: voice_profile = "hi-IN-SwaraNeural"
-    elif "spanish" in lang_lower: voice_profile = "es-ES-ElviraNeural"
-    elif "french" in lang_lower: voice_profile = "fr-FR-DeniseNeural"
-    elif "german" in lang_lower: voice_profile = "de-DE-KatjaNeural"
-    elif "italian" in lang_lower: voice_profile = "it-IT-ElsaNeural"
-    elif "japanese" in lang_lower: voice_profile = "ja-JP-NanamiNeural"
-    elif "chinese" in lang_lower: voice_profile = "zh-CN-XiaoxiaoNeural"
-    elif "arabic" in lang_lower: voice_profile = "ar-EG-SalmaNeural"
-    elif "russian" in lang_lower: voice_profile = "ru-RU-SvetlanaNeural"
-
-    async def _save():
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-            output_filepath = tmp_file.name
-        communicate = edge_tts.Communicate(text_data, voice_profile)
-        await communicate.save(output_filepath)
-        return output_filepath
-
-    return run_async(_save())
-
-def get_history_index_by_title(title):
-    for i, entry in enumerate(st.session_state.history):
-        if entry["title"] == title: return i
-    return None
-
-def load_selected_history():
-    selected_title = st.session_state.get("selected_history_title", "")
-    idx = get_history_index_by_title(selected_title)
-    if idx is None: return
-    entry = st.session_state.history[idx]
-    st.session_state.user_input_field = entry["input"]
-    st.session_state.output_display_widget = entry["output"]
-    st.session_state.src_select_ui = entry["src"]
-    st.session_state.tgt_select_ui = entry["tgt"]
-    st.session_state.rename_chat_input = entry["title"]
+    return answers[best_match_index]
 
 # ==========================================
-# SESSION STATE
+# 3. STATE & HISTORY MANAGEMENT (SIDEBAR)
 # ==========================================
-if "history" not in st.session_state: st.session_state.history = []
-if "translated_cache" not in st.session_state: st.session_state.translated_cache = ""
-if "output_display_widget" not in st.session_state: st.session_state.output_display_widget = ""
-if "play_source_audio" not in st.session_state: st.session_state.play_source_audio = False
-if "play_output_audio" not in st.session_state: st.session_state.play_output_audio = False
-if "rename_chat_input" not in st.session_state: st.session_state.rename_chat_input = ""
-if "selected_history_title" not in st.session_state: st.session_state.selected_history_title = ""
+if "chat_sessions" not in st.session_state:
+    init_id = str(uuid.uuid4())
+    st.session_state.chat_sessions = {
+        init_id: {"title": "New Chat", "messages": [], "pinned": False, "timestamp": time.time()}
+    }
+    st.session_state.current_chat_id = init_id
 
-languages = get_languages()
-sorted_languages = sorted(languages.keys())
+if "pending_bot_response" not in st.session_state:
+    st.session_state.pending_bot_response = None
 
-# ==========================================
-# UI HEADER (With Pro SVG Logo)
-# ==========================================
-pro_icon_b64 = "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzFBNzNFOCI+PHBhdGggZD0iTTEyLjg3IDE1LjA3bC0yLjU0LTIuNTEuMDMtLjAzYzEuNzQtMS45NCAyLjk4LTQuMTcgMy43MS02LjUzSDE3VjRoLTdWMkg4djJIMXYyaDExLjE3QzExLjUgNy45MiAxMC40NCA5Ljc1IDkgMTEuMzUgOC4wNyAxMC4zMiA3LjMgOS4xOSA2LjY5IDhoLTJjLjczIDEuNjMgMS43MyAzLjE3IDIuOTggNC41NmwtNS4wOSA1LjAyTDQgMTlsNS01IDMuMTEgMy4xMS43Ni0yLjA0ek0xOC41IDEwaC0yTDEyIDIyaDJsMS4xMi0zaDQuNzVMMjEgMjJoMmwtNC41LTEyem0tMi42MiA3bDEuNjItNC4zM0wxOS4xMiAxN2gtMy4yNHoiLz48L3N2Zz4="
-icon_html = f"<img src='data:image/svg+xml;base64,{pro_icon_b64}' style='width: 46px; vertical-align: middle; margin-right: 12px; margin-bottom: 6px;'/>"
-
-st.markdown(
-    f"""
-    <div style='margin-bottom: 2.5rem; text-align: center;'>
-        <h1 style='font-size: 3.2rem; font-weight: 800; margin-bottom: 8px; color: #212529; letter-spacing: -1px;'>
-            {icon_html}Global <span style='color: #1A73E8;'>Translation</span>
-        </h1>
-        <p style='font-size: 1.25rem; color: #6C757D; margin-top: 0; font-weight: 400;'>
-            Real-Time. Real Dialogue. Seamless Global Conversations.
-        </p>
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
-
-left_panel, right_panel = st.columns(2, gap="large")
-
-# ==========================================
-# LEFT PANEL (INPUT)
-# ==========================================
-with left_panel:
-    st.markdown("#### :material/text_fields: Please Enter Your Text")
-
-    source_lang = st.selectbox(
-        "Select Input Language",
-        ["Auto Detect"] + sorted_languages,
-        key="src_select_ui"
-    )
-
-    input_text = st.text_area(
-        "Enter text to process:",
-        height=250,
-        placeholder="Type or paste text here...",
-        label_visibility="collapsed",
-        key="user_input_field"
-    )
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        trigger_translation = st.button("TRANSLATE NOW", type="primary", use_container_width=True)
-    with col_b:
-        play_source_clicked = st.button(":material/volume_up: Play Audio", use_container_width=True)
-
-    if play_source_clicked:
-        if input_text.strip():
-            st.session_state.play_source_audio = True
+def get_active_chat():
+    if st.session_state.current_chat_id not in st.session_state.chat_sessions:
+        if st.session_state.chat_sessions:
+            st.session_state.current_chat_id = list(st.session_state.chat_sessions.keys())[0]
         else:
-            st.warning("Please enter text first.")
+            new_id = str(uuid.uuid4())
+            st.session_state.chat_sessions = {new_id: {"title": "New Chat", "messages": [], "pinned": False, "timestamp": time.time()}}
+            st.session_state.current_chat_id = new_id
+    return st.session_state.chat_sessions[st.session_state.current_chat_id]
 
-    if st.session_state.play_source_audio and input_text.strip():
-        with st.spinner("Generating audio..."):
-            try:
-                audio_path = generate_voice_internal(input_text, source_lang)
-                if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
-                    with open(audio_path, "rb") as f:
-                        st.audio(f.read(), format="audio/mp3")
-                    os.unlink(audio_path)
-            except Exception as e:
-                st.warning(f"Audio failed: {e}")
-            finally:
-                st.session_state.play_source_audio = False
+active_chat = get_active_chat()
 
 # ==========================================
-# RIGHT PANEL (OUTPUT)
+# 4. STRICT HTML/CSS INJECTION 
 # ==========================================
-with right_panel:
-    st.markdown("#### :material/g_translate: Translation Result")
+base_css = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
 
-    target_lang = st.selectbox(
-        "Select Destination Language",
-        sorted_languages,
-        index=sorted_languages.index("Hindi") if "Hindi" in sorted_languages else 0,
-        key="tgt_select_ui"
-    )
+header {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display:none;}
+html, body, [class*="css"] { font-family: 'Google Sans', sans-serif !important; }
 
-    if trigger_translation:
-        if input_text.strip():
-            with st.spinner("Translating..."):
-                try:
-                    src_code = "auto" if source_lang == "Auto Detect" else languages[source_lang]
-                    tgt_code = languages[target_lang]
-                    translation_result = translate_large_text_safely(input_text, src_code, tgt_code)
+/* Bot Bubbles */
+.bot-container { display: flex; justify-content: flex-start; width: 100%; margin: 15px 0 35px 0; padding-left: 80px; flex-direction: column; position: relative; box-sizing: border-box;}
+.bot-text { color: #1f1f1f; font-size: 15px; line-height: 1.6; max-width: 85%; }
 
-                    if translation_result.strip():
-                        st.session_state.translated_cache = translation_result
-                        st.session_state.output_display_widget = translation_result
-                        st.session_state.history.append({
-                            "title": f"Chat {len(st.session_state.history) + 1}",
-                            "src": source_lang, "tgt": target_lang,
-                            "input": input_text, "output": translation_result
-                        })
-                    else:
-                        st.error("Empty result.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-        else:
-            st.warning("Provide input text first.")
+/* Bot Actions */
+.bot-actions { display: flex; gap: 4px; margin-top: 12px; color: #444746; position: relative;}
+.bot-actions .action-btn { font-size: 18px; cursor: pointer; padding: 8px; border-radius: 50%; transition: 0.2s; user-select: none; }
+.bot-actions .action-btn:hover { background: #f0f4f9; color: #1f1f1f; }
 
-    st.text_area(
-        "Resulting translation output:",
-        height=250,
-        key="output_display_widget",
-        label_visibility="collapsed"
-    )
+/* User Bubbles */
+.user-container { display: flex; flex-direction: column; align-items: flex-end; width: 100%; margin: 25px 0 10px 0; padding-right: 80px; box-sizing: border-box;}
+.user-bubble { background-color: #f0f4f9; color: #1f1f1f; padding: 12px 24px; border-radius: 24px; max-width: 60%; font-size: 15px; line-height: 1.5; margin-bottom: 4px;}
 
-    action_col1, action_col2, action_col3 = st.columns(3)
+/* User Actions */
+.user-actions { display: flex; gap: 4px; color: #444746; margin-right: 8px; }
+.user-actions .action-btn { font-size: 16px; cursor: pointer; padding: 6px; border-radius: 50%; transition: 0.2s; user-select: none; }
+.user-actions .action-btn:hover { background: #f0f4f9; color: #1f1f1f; }
 
-    with action_col1:
-        if st.button(":material/volume_up: Play Audio", key="play_out", use_container_width=True):
-            if st.session_state.translated_cache.strip():
-                st.session_state.play_output_audio = True
-            else:
-                st.warning("Translate text first.")
+/* The Input Box Customization */
+div[data-testid="stChatInput"] {
+    border-radius: 32px !important; max-width: 1000px !important; margin: 0 auto !important;
+    padding-left: 20px !important; padding-right: 60px !important; transition: all 0.3s ease;
+    border: 2px solid transparent !important; background-clip: padding-box, border-box !important;
+    background-origin: padding-box, border-box !important;
+    background-image: linear-gradient(white, white), linear-gradient(90deg, #4285f4, #ea4335, #fbbc05, #34a853) !important;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.05) !important;
+}
+div[data-testid="stChatInput"]:focus-within {
+    background-image: linear-gradient(white, white), linear-gradient(90deg, #4285f4, #ea4335, #fbbc05, #34a853) !important;
+    box-shadow: 0 1px 10px rgba(32,33,36,.28) !important;
+}
 
-    with action_col2:
-        st.download_button(
-            label=":material/download: Download",
-            data=st.session_state.translated_cache if st.session_state.translated_cache else "",
-            file_name="translation.txt",
-            mime="text/plain",
-            use_container_width=True
-        )
+div[data-testid="stChatInput"] > div, div[data-testid="stChatInput"] > div:focus-within,
+div[data-testid="stChatInput"] div[data-baseweb="textarea"], div[data-testid="stChatInput"] div[data-baseweb="textarea"]:focus-within,
+div[data-testid="stChatInput"] textarea, div[data-testid="stChatInput"] textarea:focus {
+    border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important;
+}
+div[data-testid="stChatInput"] textarea { color: #1f1f1f !important; font-size: 16px !important; padding: 0 !important; width: 100% !important;}
 
-    # -------------------------------------------------------------
-    # BULLETPROOF BASE64 HTML IFRAME (Prevents JS String Breaks)
-    # -------------------------------------------------------------
-    with action_col3:
-        text_to_copy = st.session_state.translated_cache if st.session_state.translated_cache else input_text
-        if text_to_copy.strip():
-            # Safely encode the text into Base64 to prevent any quotes or newlines from breaking HTML/JS
-            encoded_text = base64.b64encode(text_to_copy.encode('utf-8')).decode('utf-8')
-            
-            html_code = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
-                <style>
-                    body {{ margin: 0; display: flex; align-items: center; justify-content: center; font-family: sans-serif; }}
-                    .copy-btn {{
-                        display: flex; align-items: center; justify-content: center; gap: 6px;
-                        width: 100%; height: 40px; border-radius: 8px;
-                        border: 1px solid #dadce0; background: #ffffff; color: #3c4043;
-                        cursor: pointer; font-size: 1rem; transition: all 0.2s ease-in-out;
-                    }}
-                    .copy-btn:hover {{ border-color: #1a73e8; color: #1a73e8; background: #f8f9ff; }}
-                    .material-symbols-outlined {{ font-size: 1.2rem; }}
-                </style>
-            </head>
-            <body>
-                <button class="copy-btn" id="copyBtn">
-                    <span class="material-symbols-outlined" id="icon">content_copy</span>
-                    <span id="text">Copy</span>
-                </button>
-                <script>
-                    document.getElementById('copyBtn').addEventListener('click', function() {{
-                        // Decode the base64 string back to normal text safely
-                        const decodedText = decodeURIComponent(escape(window.atob('{encoded_text}')));
-                        
-                        navigator.clipboard.writeText(decodedText).then(() => {{
-                            document.getElementById('icon').innerText = 'check';
-                            document.getElementById('text').innerText = 'Copied';
-                            setTimeout(() => {{
-                                document.getElementById('icon').innerText = 'content_copy';
-                                document.getElementById('text').innerText = 'Copy';
-                            }}, 2000);
-                        }}).catch(err => {{
-                            console.error('Failed to copy: ', err);
-                        }});
-                    }});
-                </script>
-            </body>
-            </html>
-            """
-            components.html(html_code, height=45)
-        else:
-            st.markdown(
-                """
-                <div style='display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:40px;border-radius:8px;border:1px solid #dadce0;background:#f8f9fa;color:#9aa0a6;opacity:0.7;cursor:not-allowed;font-family:sans-serif;'>
-                    <span style='font-family: "Material Symbols Outlined"; font-size: 1.2rem;'></span> Copy
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+div[data-testid="stChatInputContainer"]::after {
+    content: "CodeAlpha FAQ Assistant is AI and can make mistakes."; display: block; text-align: center; font-size: 12px; color: #5f6368; padding-top: 15px; font-family: 'Google Sans', sans-serif;
+}
 
-    if st.session_state.play_output_audio and st.session_state.translated_cache.strip():
-        with st.spinner("Generating audio..."):
-            try:
-                audio_path = generate_voice_internal(st.session_state.translated_cache, target_lang)
-                if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
-                    with open(audio_path, "rb") as f:
-                        st.audio(f.read(), format="audio/mp3")
-                    os.unlink(audio_path)
-            except Exception as e:
-                st.warning(f"Audio failed: {e}")
-            finally:
-                st.session_state.play_output_audio = False
+@keyframes pulseMic {
+    0% { background-color: transparent; transform: translateY(-50%) scale(1); }
+    50% { background-color: #fbbc05; transform: translateY(-50%) scale(1.1); box-shadow: 0 0 10px rgba(251, 188, 5, 0.5); }
+    100% { background-color: transparent; transform: translateY(-50%) scale(1); }
+}
+.mic-active {
+    animation: pulseMic 1.5s infinite ease-in-out !important;
+}
+</style>
+"""
+st.markdown(base_css, unsafe_allow_html=True)
 
-# ==========================================
-# SIDEBAR HISTORY
-# ==========================================
-st.sidebar.markdown("### :material/history: History")
-
-if st.session_state.history:
-    titles = [entry["title"] for entry in st.session_state.history]
-    selected_title = st.sidebar.selectbox(
-        "Saved chats", titles,
-        index=titles.index(st.session_state.selected_history_title) if st.session_state.selected_history_title in titles else 0,
-        key="selected_history_title", on_change=load_selected_history
-    )
-
-    st.sidebar.text_input("Rename chat", key="rename_chat_input")
-
-    rename_col, delete_col = st.sidebar.columns(2)
-    with rename_col:
-        if st.button(":material/edit: Rename", use_container_width=True):
-            idx = get_history_index_by_title(st.session_state.get("selected_history_title", ""))
-            new_title = st.session_state.rename_chat_input.strip()
-            if idx is not None and new_title:
-                st.session_state.history[idx]["title"] = new_title
-                st.session_state.selected_history_title = new_title
-                st.rerun()
-
-    with delete_col:
-        if st.button(":material/delete: Delete", use_container_width=True):
-            idx = get_history_index_by_title(st.session_state.get("selected_history_title", ""))
-            if idx is not None:
-                st.session_state.history.pop(idx)
-                if st.session_state.history:
-                    st.session_state.selected_history_title = st.session_state.history[max(0, min(idx, len(st.session_state.history) - 1))]["title"]
-                    load_selected_history()
-                else:
-                    st.session_state.selected_history_title = ""
-                    st.session_state.user_input_field = ""
-                    st.session_state.output_display_widget = ""
-                    st.session_state.translated_cache = ""
-                    st.session_state.rename_chat_input = ""
-                st.rerun()
-
-    st.sidebar.markdown("---")
-    if st.button(":material/delete_sweep: Clear Archive", use_container_width=True):
-        st.session_state.history = []
-        st.session_state.translated_cache = ""
-        st.session_state.output_display_widget = ""
-        st.session_state.user_input_field = ""
-        st.session_state.rename_chat_input = ""
-        st.session_state.selected_history_title = ""
-        st.rerun()
-
-    idx = get_history_index_by_title(st.session_state.get("selected_history_title", ""))
-    if idx is not None:
-        selected = st.session_state.history[idx]
-        st.sidebar.info(f"**From:** {selected['src']} \n\n**To:** {selected['tgt']}")
+if len(active_chat["messages"]) == 0:
+    st.markdown("""
+<style>
+.stApp { background: radial-gradient(circle at 50% 45%, #c2dffe 0%, #eef5ff 25%, #ffffff 60%) !important; }
+div[data-testid="stChatInputContainer"] { position: fixed !important; bottom: calc(50% - 30px) !important; background: transparent !important; z-index: 999; width: 100%;}
+.landing-title { position: fixed; top: calc(50% - 110px); left: 50%; transform: translateX(-50%); text-align: center; font-size: 38px; color: #202124; font-weight: 400; z-index: 999; }
+</style>
+""", unsafe_allow_html=True)
 else:
-    st.sidebar.info("No saved chats yet. Translate text to record history.")
+    st.markdown("""
+<style>
+.stApp { background-color: #ffffff !important; }
+div[data-testid="stChatInputContainer"] { bottom: 0 !important; background: #ffffff !important; padding-bottom: 25px !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 5. DOM INJECTION ENGINE (CODEALPHA)
+# ==========================================
+js_code = """
+<script>
+const parentDoc = window.parent.document;
+if (!parentDoc.getElementById('codealpha-injected-script')) {
+    const script = parentDoc.createElement('script');
+    script.id = 'codealpha-injected-script';
+    script.innerHTML = `
+        if (!document.getElementById('codealpha-global-css')) {
+            const style = document.createElement('style');
+            style.id = 'codealpha-global-css';
+            style.innerHTML = \`
+                .codealpha-toast { position: fixed; bottom: -100px; left: 24px; background: #1f1f1f; padding: 14px 24px; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); z-index: 200000; font-family: 'Google Sans', sans-serif; font-size: 14px; color: white; display: flex; align-items: center; gap: 12px; transition: bottom 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none;}
+                .codealpha-toast.show { bottom: 40px; }
+                .feedback-modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.85); z-index: 200000; align-items: center; justify-content: center; }
+                .feedback-modal { background: white; border-radius: 16px; padding: 24px; width: 450px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); font-family: 'Google Sans', sans-serif; }
+                .feedback-option { padding: 12px 16px; margin-bottom: 8px; background: #f0f4f9; border-radius: 8px; cursor: pointer; color: #1f1f1f; font-size: 14px; transition: 0.2s;}
+                .feedback-option:hover { background: #e8eaed; }
+                .redo-dropdown { position: absolute; top: 100%; left: 0; background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); padding: 8px 0; z-index: 999999 !important; min-width: 200px; margin-top: 4px; font-family: 'Google Sans', sans-serif; }
+                .redo-item { padding: 10px 16px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 12px; color: #1f1f1f; transition: 0.2s;}
+                .redo-item:hover { background: #f0f4f9; }
+            \`;
+            document.head.appendChild(style);
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'codealpha-feedback-modal';
+            overlay.className = 'feedback-modal-overlay';
+            overlay.innerHTML = \`
+                <div class="feedback-modal">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <h3 style="margin:0; font-size:20px; font-weight: 400;">What went wrong?</h3>
+                        <span class="close-modal" style="cursor:pointer; font-size:20px; color:#5f6368;">✕</span>
+                    </div>
+                    <p style="margin-top:0; margin-bottom:20px; font-size:14px; color:#5f6368;">Your feedback helps make CodeAlpha better for everyone.</p>
+                    <div class="feedback-option">Offensive / Unsafe</div>
+                    <div class="feedback-option">Not factually correct</div>
+                    <div class="feedback-option">Didn't follow instructions</div>
+                    <div class="feedback-option">Personalization issue</div>
+                    <div class="feedback-option">Other</div>
+                </div>
+            \`;
+            document.body.appendChild(overlay);
+
+            const toast = document.createElement('div');
+            toast.id = 'codealpha-global-toast';
+            toast.className = 'codealpha-toast';
+            toast.innerHTML = '<span id="ca-toast-msg-text"></span>';
+            document.body.appendChild(toast);
+        }
+
+        window.codeAlphaTriggerToast = function(msg) {
+            const toast = document.getElementById('codealpha-global-toast');
+            if(toast) {
+                document.getElementById('ca-toast-msg-text').innerText = msg;
+                toast.classList.add('show');
+                setTimeout(() => { toast.classList.remove('show'); }, 3000);
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            // COPY PROMPT
+            if (e.target.closest('.action-copy-prompt')) {
+                const btnCopy = e.target.closest('.action-copy-prompt');
+                const cleanText = btnCopy.closest('.user-container').querySelector('.user-bubble').innerText;
+                navigator.clipboard.writeText(cleanText);
+                window.codeAlphaTriggerToast("Prompt Copied successfully! Ready when you are.");
+                return;
+            }
+
+            // EDIT PROMPT
+            if (e.target.closest('.action-edit-prompt')) {
+                const btnEdit = e.target.closest('.action-edit-prompt');
+                const textToEdit = btnEdit.closest('.user-container').querySelector('.user-bubble').innerText;
+                const textarea = document.querySelector('div[data-testid="stChatInput"] textarea');
+                if (textarea) {
+                    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                    descriptor.call(textarea, textToEdit);
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    textarea.focus();
+                }
+                return;
+            }
+
+            // FEEDBACK THUMBS
+            if (e.target.closest('.action-thumb-up')) {
+                window.codeAlphaTriggerToast("Thank you for your valuable feedback. It helps make CodeAlpha better for our growing community.");
+                return;
+            }
+            if (e.target.closest('.action-thumb-down')) {
+                document.getElementById('codealpha-feedback-modal').style.display = 'flex';
+                return;
+            }
+            if (e.target.closest('.close-modal') || e.target.closest('.feedback-option')) {
+                document.getElementById('codealpha-feedback-modal').style.display = 'none';
+                if (e.target.closest('.feedback-option')) {
+                    window.codeAlphaTriggerToast("Thank you for your valuable feedback. It helps make CodeAlpha better for our growing community..");
+                }
+                return;
+            }
+
+            // REFRESH OPTIONS
+            if (e.target.closest('.action-refresh')) {
+                const btnRefresh = e.target.closest('.action-refresh');
+                document.querySelectorAll('.redo-dropdown').forEach(el => el.remove()); 
+                document.querySelectorAll('.bot-actions').forEach(el => el.style.zIndex = '1'); 
+                btnRefresh.closest('.bot-actions').style.zIndex = '9999';
+                
+                const menu = document.createElement('div');
+                menu.className = 'redo-dropdown';
+                menu.innerHTML = \`
+                    <div class="redo-item" data-action="Longer"><span class="material-symbols-outlined" style="font-size:18px;">format_align_left</span> Longer</div>
+                    <div class="redo-item" data-action="Shorter"><span class="material-symbols-outlined" style="font-size:18px;">short_text</span> Shorter</div>
+                    <div class="redo-item" data-action="Personalize"><span class="material-symbols-outlined" style="font-size:18px;">person</span> Personalize</div>
+                    <div class="redo-item" data-action="Try again"><span class="material-symbols-outlined" style="font-size:18px;">refresh</span> Try again</div>
+                \`;
+                btnRefresh.parentElement.appendChild(menu);
+                return;
+            }
+
+            if (e.target.closest('.redo-item')) {
+                e.preventDefault();
+                const item = e.target.closest('.redo-item');
+                const action = item.getAttribute('data-action');
+                const container = item.closest('.bot-container');
+                const textSpan = container.querySelector('.actual-bot-text');
+                
+                document.querySelectorAll('.redo-dropdown').forEach(el => el.remove());
+                document.querySelectorAll('.bot-actions').forEach(el => el.style.zIndex = '1');
+                
+                if(!textSpan) return;
+
+                let originalText = textSpan.getAttribute('data-original');
+                if(!originalText) {
+                    originalText = textSpan.innerText;
+                    textSpan.setAttribute('data-original', originalText);
+                }
+                
+                textSpan.innerText = "Please wait... I'm carefully generating a premium variation for you.";
+                textSpan.style.opacity = "0.7";
+                
+                setTimeout(() => {
+                    textSpan.style.opacity = "1";
+                    if(action === 'Longer') {
+                        textSpan.innerText = originalText + " Furthermore, our AI platform is designed to scale effortlessly, ensuring that all operations remain highly optimized and secure.";
+                    } else if(action === 'Shorter') {
+                        textSpan.innerText = originalText.split('.')[0] + ".";
+                    } else if(action === 'Personalize') {
+                        textSpan.innerText = originalText;
+                    } else if(action === 'Try again') {
+                        textSpan.innerText = "Let me rephrase that: " + originalText;
+                    }
+                }, 600);
+                return;
+            }
+
+            // COPY TEXT
+            if (e.target.closest('.action-copy')) {
+                const cleanText = e.target.closest('.bot-container').querySelector('.actual-bot-text').innerText;
+                navigator.clipboard.writeText(cleanText);
+                window.codeAlphaTriggerToast("Copied successfully! Ready when you are.");
+                return;
+            }
+
+            // TEXT TO SPEECH (INDIAN MALE VOICE)
+            if (e.target.closest('.action-listen')) {
+                const btnListen = e.target.closest('.action-listen');
+                if (window.speechSynthesis.speaking) {
+                    window.speechSynthesis.cancel();
+                    btnListen.style.color = '#444746';
+                    return;
+                }
+                
+                const text = btnListen.closest('.bot-container').querySelector('.actual-bot-text').innerText;
+                const utterance = new window.SpeechSynthesisUtterance(text);
+                
+                let voices = window.speechSynthesis.getVoices();
+                let aiVoice = voices.find(v => (v.name.includes('India') || v.lang.includes('IN') || v.lang.includes('hi-IN')) && (v.name.toLowerCase().includes('male') || v.name.includes('Ravi') || v.name.includes('Rishi')));
+                if(!aiVoice) aiVoice = voices.find(v => v.name.toLowerCase().includes('male'));
+                if(!aiVoice && voices.length > 0) aiVoice = voices[0];
+                
+                if(aiVoice) utterance.voice = aiVoice;
+                utterance.pitch = 1.0; 
+                utterance.rate = 1.0;  
+                
+                btnListen.style.color = '#1a73e8';
+                utterance.onend = () => { btnListen.style.color = '#444746'; };
+                window.speechSynthesis.speak(utterance);
+                return;
+            }
+
+            if (!e.target.closest('.action-refresh') && !e.target.closest('.redo-dropdown')) {
+                document.querySelectorAll('.redo-dropdown').forEach(el => el.remove());
+                document.querySelectorAll('.bot-actions').forEach(el => el.style.zIndex = '1');
+            }
+        });
+
+        // --- SHARP REAL-TIME MICROPHONE ---
+        window.codeAlphaMicRecording = false;
+        window.codeAlphaRecognition = null;
+
+        setInterval(() => {
+            const container = document.querySelector('div[data-testid="stChatInput"]');
+            const textarea = document.querySelector('div[data-testid="stChatInput"] textarea');
+            
+            if (container && textarea && !document.getElementById('ca-mic-btn')) {
+                const btn = document.createElement('div');
+                btn.id = 'ca-mic-btn';
+                btn.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="#444746"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>\`;
+                btn.style.cssText = 'position: absolute; right: 34px; top: 50%; transform: translateY(-50%); cursor: pointer; z-index: 99999; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 500%; transition: background-color 0.1s;';
+                container.appendChild(btn);
+
+                const RecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (RecognitionClass && !window.codeAlphaRecognition) {
+                    window.codeAlphaRecognition = new RecognitionClass();
+                    window.codeAlphaRecognition.continuous = true; 
+                    window.codeAlphaRecognition.interimResults = true; 
+                    
+                    window.codeAlphaRecognition.onstart = function() {
+                        btn.classList.add('mic-active');
+                        window.codeAlphaOriginalText = textarea.value;
+                        window.codeAlphaFinalizedDictation = "";
+                    };
+
+                    window.codeAlphaRecognition.onresult = function(event) {
+                        let interimTranscript = "";
+                        for (let i = event.resultIndex; i < event.results.length; ++i) {
+                            if (event.results[i].isFinal) {
+                                window.codeAlphaFinalizedDictation += event.results[i][0].transcript;
+                            } else {
+                                interimTranscript += event.results[i][0].transcript;
+                            }
+                        }
+                        let combinedTranscript = window.codeAlphaFinalizedDictation + interimTranscript;
+                        let newText = window.codeAlphaOriginalText;
+                        if (newText && combinedTranscript && !newText.endsWith(" ")) newText += " ";
+                        newText += combinedTranscript;
+
+                        const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                        descriptor.call(textarea, newText);
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    };
+                    
+                    window.codeAlphaRecognition.onend = function() { 
+                        btn.classList.remove('mic-active');
+                        window.codeAlphaMicRecording = false; 
+                    };
+                }
+
+                btn.onclick = function(e) { 
+                    e.stopPropagation();
+                    if (window.codeAlphaMicRecording) {
+                        window.codeAlphaRecognition.stop(); 
+                    } else {
+                        try {
+                            window.codeAlphaRecognition.start();
+                            window.codeAlphaMicRecording = true;
+                        } catch(err) {
+                            window.codeAlphaRecognition.stop();
+                        }
+                    }
+                };
+            }
+        }, 500);
+
+        window.speechSynthesis.getVoices();
+    `;
+    parentDoc.head.appendChild(script);
+}
+</script>
+"""
+components.html(js_code, height=0, width=0)
+
+# ==========================================
+# 6. UI RENDERING & TYPING PIPELINE
+# ==========================================
+main_container = st.container()
+
+def render_bot_message(text, animate=False):
+    cursor = "▌" if animate else ""
+    return f"""
+    <div class="bot-container">
+        <div class="bot-text">
+            <span class="actual-bot-text">{text}</span>{cursor}
+            <div class="bot-actions" style="{ 'display:none;' if animate else '' }">
+                <span class="material-symbols-outlined action-btn action-thumb-up" title="Good response">thumb_up</span>
+                <span class="material-symbols-outlined action-btn action-thumb-down" title="Bad response">thumb_down</span>
+                <span style="position:relative;">
+                    <span class="material-symbols-outlined action-btn action-refresh" title="Regenerate">refresh</span>
+                </span>
+                <span class="material-symbols-outlined action-btn action-copy" title="Copy text">content_copy</span>
+                <span class="material-symbols-outlined action-btn action-listen" title="Listen">volume_up</span>
+            </div>
+        </div>
+    </div>
+    """
+
+def render_user_message(text):
+    return f"""
+    <div class="user-container">
+        <div class="user-bubble">{text}</div>
+        <div class="user-actions">
+            <span class="material-symbols-outlined action-btn action-copy-prompt" title="Copy prompt">content_copy</span>
+            <span class="material-symbols-outlined action-btn action-edit-prompt" title="Edit prompt">edit</span>
+        </div>
+    </div>
+    """
+
+with main_container:
+    if len(active_chat["messages"]) == 0:
+        st.markdown("<div class='landing-title'>Hi there! Welcome to CodeAlpha. I'm your AI FAQ Assistant.</div>", unsafe_allow_html=True)
+    else:
+        for msg in active_chat["messages"]:
+            if msg["role"] == "user":
+                st.markdown(render_user_message(msg["content"]), unsafe_allow_html=True)
+            else:
+                st.markdown(render_bot_message(msg["content"], animate=False), unsafe_allow_html=True)
+
+if st.session_state.pending_bot_response:
+    with main_container:
+        response = st.session_state.pending_bot_response
+        message_placeholder = st.empty()
+        full_response = ""
+        for chunk in response.split():
+            full_response += chunk + " "
+            time.sleep(0.04)
+            message_placeholder.markdown(render_bot_message(full_response, animate=True), unsafe_allow_html=True)
+        
+        message_placeholder.markdown(render_bot_message(full_response, animate=False), unsafe_allow_html=True)
+        
+    active_chat["messages"].append({"role": "assistant", "content": response})
+    st.session_state.chat_sessions[st.session_state.current_chat_id] = active_chat
+    st.session_state.pending_bot_response = None
+
+# ==========================================
+# 7. INPUT PROCESSING
+# ==========================================
+if prompt := st.chat_input("Please ask your question here..."):
+    # Auto-rename new chats
+    if active_chat["title"] == "New Chat":
+        new_title = prompt[:20] + "..." if len(prompt) > 20 else prompt
+        active_chat["title"] = new_title
+        
+    active_chat["messages"].append({"role": "user", "content": prompt})
+    st.session_state.chat_sessions[st.session_state.current_chat_id] = active_chat
+    
+    bot_response = get_best_match(prompt)
+    st.session_state.pending_bot_response = bot_response
+    st.rerun()
